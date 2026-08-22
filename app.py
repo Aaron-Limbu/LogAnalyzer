@@ -5,6 +5,31 @@ from colorama import Fore, Back, Style, init
 
 weblog = '127.0.0.1 - - [20/Aug/2026:12:30:00 +0000] "GET /.env HTTP/1.1" 200 2326'
 table = {}
+"""
+    For analyzing weblog i create list of files or path to files for checking what is being accessed 
+    rather than this writing every path to sensitive file for find it on log i will just use extensions like .conf .log 
+    now for testing other cases other weblog list will be used. :)
+    this program will be taking weblog from log file passed from main.py later on 
+"""
+
+# normal 
+norm = ['192.168.1.50 - - [21/Aug/2026:10:15:30 +0000] "GET /index.html HTTP/1.1" 200 4523'
+,'10.0.0.12 - - [21/Aug/2026:10:16:02 +0000] "GET /static/css/main.css HTTP/1.1" 200 12540',
+'172.16.0.5 - - [21/Aug/2026:10:17:11 +0000] "POST /api/v1/login HTTP/1.1" 200 342',
+'192.168.1.75 - - [21/Aug/2026:10:18:00 +0000] "GET /images/logo.png HTTP/1.1" 304 0']
+
+
+# malicious scans & recons 
+mr = ['185.220.101.5 - - [22/Aug/2026:01:22:14 +0000] "GET /wp-admin/ HTTP/1.1" 404 1245',
+'45.155.205.23 - - [22/Aug/2026:02:45:10 +0000] "GET /config.php HTTP/1.1" 404 1245',
+'91.241.19.82 - - [22/Aug/2026:03:12:00 +0000] "POST /xmlrpc.php HTTP/1.1" 403 220',
+'141.98.11.44 - - [22/Aug/2026:04:05:19 +0000] "GET /shell?cd+/tmp;rm+-rf+*;wget+... HTTP/1.1" 400 312']
+
+# client & server errors
+cserror = ['192.168.1.100 - - [22/Aug/2026:14:20:05 +0000] "GET /bad-link HTTP/1.1" 404 1245',
+'172.217.16.142 - - [22/Aug/2026:15:32:41 +0000] "POST /checkout HTTP/1.1" 500 562',
+'10.0.0.5 - - [22/Aug/2026:16:01:12 +0000] "GET /heavy-report HTTP/1.1" 504 0']
+
 
 not_good = [
     '.env',
@@ -49,17 +74,20 @@ class LogAnalyzer:
                 method = m
         
         if method == "GET":
-            match = [n for n in not_good if not_good if n in get_contents[0]] 
-            if match:
-                print(Fore.YELLOW + f"[i] Suspicious request for FILE : {match[0]}")
+            f_match = [n for n in not_good if not_good if n in get_contents[0]] 
+            if f_match:
+                print(Fore.YELLOW + f"[i] Suspicious request for FILE : {f_match[0]}")
             reqS = [s for s in status_codes if status_codes if s in self.weblog] #might have overcomplicated this#-_- idk
-            if (reqS[0] == '200'):
-                print(Fore.RED + f"[!] Status code: {reqS[0]} for {match[0]} from IP: {self.table['ip']}")
-            if (reqS[0] == '403'):
-                print(Fore.YELLOW + f"[i] Status code: {reqS[0]} for {match[0]} (still suspicious) from IP: {self.table['ip']}")
-
+            match reqS: 
+                case ['200']:
+                    print(Fore.RED + f"[!] Status code: {reqS[0]} for {f_match[0]} from IP: {self.table['ip']}")
+                case ['403']:
+                    print(Fore.YELLOW + f"[i] Status code: {reqS[0]} for {f_match[0]} (still suspicious) from IP: {self.table['ip']}")
+                case _: 
+                    print("[-] status not found")
     def returntable(self):
         print(f"[+] {self.table}")
+        return self.table
 
 if __name__ == "__main__":
     try: 
