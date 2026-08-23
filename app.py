@@ -88,7 +88,7 @@ class LogAnalyzer:
         get_contents = re.findall(r'"([^"]*)"',self.weblog)
         found_method = re.search(r'"[A-Za-z]{2}',self.weblog) 
         method = ""
-        self.table["content"].append(get_contents)
+        self.table["content"].append(get_contents[0])
         print(f"[+] Content : {get_contents}")
         for m in methods :
             if found_method.group()[1:3] == m[:2]:
@@ -107,17 +107,20 @@ class LogAnalyzer:
             """match reqS: 
                 case ['200']:
                     print(Fore.RED + f"[!] Status code: {reqS[0]} for {f_match[0]} from IP: {self.table['ip']}")
-                    self.table["status"].append(reqS)
+                    self.table["status"].append(reqS[0])
                 case ['403']:
                     print(Fore.YELLOW + f"[i] Status code: {reqS[0]} for {f_match[0]} (still suspicious) from IP: {self.table['ip']}")
-                    self.table["status"].append(reqS)
+                    self.table["status"].append(reqS[0])
                 case _: 
                     print("[-] status not found")
                     self.table["status"].append("not found")
 """
     def returntable(self):
-        print(f"[+] {self.table}")
-        return self.table
+        print("-------------------------------")
+        print("[+] Table")
+        for i in range(len(self.table["ip"])): 
+            print(f"[{i}] IP : {self.table['ip'][i]}, DATE : {self.table['date'][i]}, CONTENT : {self.table['content'][i]}")
+            #print(f"[{i}] STATUS : {self.table['status'][i]}")
 
 if __name__ == "__main__":
     try: 
@@ -127,9 +130,8 @@ if __name__ == "__main__":
             print(f"[+] id {i} : \'{wlog}\'")
             loganalyzer = LogAnalyzer(wlog,table)
             loganalyzer.analyzeLog()
-            loganalyzer.returntable()
         #loganalyzer = LogAnalyzer(weblog,table)
         #loganalyzer.analyzeLog()
-        #loganalyzer.returntable()
+        loganalyzer.returntable()
     except Exception as e:
         print(f"[!] {e}")
