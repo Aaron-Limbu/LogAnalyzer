@@ -52,12 +52,46 @@ badf_ext = [
     '.ini',
 ]
 
+protectedDir = [
+    '/admin/',
+    '/wp-admin/',
+    '/storage/',
+    '/packages/',
+    '/vendor/',
+    '/bootstrap/',
+    '/cache/',
+    '/database/',
+    '/config/',
+    '/app/',
+    '/routes/'
+]
+
 goodf_ext = [
     '.html',
     '.php',
     '.png',
     '.css',
 ]
+
+protectedFiles = [
+    'config',
+    'composer.json',
+    'composer.lock',
+    '.git',
+    'xmlrpc.php'
+]
+
+rce_cmds = [
+    'cd',
+    'rm',
+    'cat',
+    'ls',
+]
+
+api_endpoints = [
+    '/api/v1/login'
+]
+
 
 class LogAnalyzer: 
     def __init__(self,weblog,table):
@@ -84,37 +118,61 @@ class LogAnalyzer:
 
 
     def analyzeReq(self):
-        methods = ['GET','POST','UPDATE','DELETE','PATCH']        
-        get_contents = re.findall(r'"([^"]*)"',self.weblog)
-        found_method = re.search(r'"[A-Za-z]{2}',self.weblog) 
-        method = ""
-        self.table["content"].append(get_contents[0])
+        methods = ['GET', 'POST', 'UPDATE', 'DELETE', 'PATCH']
+        get_contents = re.findall(r'"([^"]*)"', self.weblog)
+        if not get_contents:
+            print("[-] No quoted request found")
+            return
+        request_line = get_contents[0]
+        self.table["content"].append(request_line)
         print(f"[+] Content : {get_contents}")
-        for m in methods :
-            if found_method.group()[1:3] == m[:2]:
-                method = m
-
-        if method == "GET":
-            f_match = [n for n in badf_ext if badf_ext if n in get_contents[0]] 
-            if f_match:
-                print(Fore.YELLOW + f"[i] Suspicious request for FILE : {f_match[0]}")
-            else: 
-                f_match = [g for g in goodf_ext if goodf_ext if g in get_contents[0]]
+        parts = request_line.split()
+        method = parts[0].upper() if parts else ""
+        if method not in methods:
+            print(f"[-] Unknown method: {method}")
+            return
+        match method:
+            case "GET":
+                f_match = [n for n in badf_ext if n in request_line]
                 if f_match:
-                    print(Fore.GREEN + f"[+] Normal request : {f_match[0]}")
-            
-            reqS = [s for s in status_codes if status_codes if s in self.weblog] #might have overcomplicated this#-_- idk
-            """match reqS: 
-                case ['200']:
-                    print(Fore.RED + f"[!] Status code: {reqS[0]} for {f_match[0]} from IP: {self.table['ip']}")
+                    print(Fore.YELLOW + f"[i] Suspicious request for FILE : {f_match[0]}")
+                else:
+                    dir_match = [di for di in protectedDir if di in request_line]
+                    if dir_match:
+                        print(Fore.YELLOW + f"[i] Suspicious request for directory : {dir_match[0]}")
+
+                    ce_match = [cmd for cmd in rce_cmds if cmd in request_line]
+                    if ce_match:
+                        print(Fore.RED + f"[!] Command Found : {request_line.split()[1] if len(request_line.split()) > 1 else request_line}")
+
+                    f_match = [g for g in goodf_ext if g in request_line]
+                    if f_match:
+
+                        fp_match = [f for f in protectedFiles if f in request_line]
+                        if fp_match:
+                            print(Fore.YELLOW + f"[i] Suspicious request for {fp_match[0]}")
+                        else: 
+                            print(Fore.GREEN + f"[+] Normal request : {f_match[0]}")
+
+                    
+                    
+                reqS = [s for s in status_codes if s in self.weblog]
+                if reqS:
                     self.table["status"].append(reqS[0])
-                case ['403']:
-                    print(Fore.YELLOW + f"[i] Status code: {reqS[0]} for {f_match[0]} (still suspicious) from IP: {self.table['ip']}")
-                    self.table["status"].append(reqS[0])
-                case _: 
-                    print("[-] status not found")
+                else:
                     self.table["status"].append("not found")
-"""
+
+            case "POST":
+                ap_match = [a for a in api_endpoints if a in request_line]
+                if ap_match : 
+                    print(Fore.GREEN + f"[+] Normal POST API : {ap_match[0]}")
+                pf_match = [f for f in protectedFiles if f in request_line]
+                if pf_match:
+                    print(Fore.RED + f"[!] POST REQUEST ON PROTECTED FILE: {pf_match[0]}")
+
+            case _:
+                print(f"[-] Unhandled method: {method}")
+
     def returntable(self):
         print("-------------------------------")
         print("[+] Table")
@@ -127,6 +185,10 @@ if __name__ == "__main__":
         init(autoreset=True)
         print("[i] Checking Web Logs") 
         for i,wlog in enumerate(norm) : 
+            print(f"[+] id {i} : \'{wlog}\'")
+            loganalyzer = LogAnalyzer(wlog,table)
+            loganalyzer.analyzeLog()
+        for i,wlog in enumerate(mr): 
             print(f"[+] id {i} : \'{wlog}\'")
             loganalyzer = LogAnalyzer(wlog,table)
             loganalyzer.analyzeLog()
