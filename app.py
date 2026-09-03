@@ -1,14 +1,20 @@
 import re
-from colorama import Fore, Back, Style, init    
-
+from colorama import Fore, init    
+import argparse
 #weblog = '127.0.0.1 - - [20/Aug/2026:12:30:00 +0000] "GET /index.html HTTP/1.1" 200 2326'
 
 #weblog = '127.0.0.1 - - [20/Aug/2026:12:30:00 +0000] "GET /.env HTTP/1.1" 200 2326'
+
+nlog = '192.168.1.24 - - [02/Sep/2026:14:32:01 +0000] "GET / HTTP/1.1" 200 8241 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36"'
+slog = '192.168.1.45 - - [02/Sep/2026:14:32:10 +0000] "GET /.env HTTP/1.1" 200 4526 "https://example.com/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"'
+
 entry = {
     "ip":[],
     "date":[],
     "content":[],
     "status":[],
+    "useragent":[],
+    "referrer_url":[],
 }
 
 LogTable = []
@@ -56,6 +62,7 @@ badf_ext = [
     '.ini',
 ]
 
+
 protectedDir = [
     '/admin/',
     '/wp-admin/',
@@ -102,14 +109,16 @@ api_endpoints = [
 ]
 
 
+
 class LogAnalyzer: 
     def __init__(self,weblog,table):
         self.weblog = weblog
         self.table = table
 
     def analyzeLog(self):
-        ip_pattern = r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b"
+        ip_pattern = r"\b\A\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b"
         found_ip = re.findall(ip_pattern,self.weblog)
+        
         for ip in found_ip:
             print(f"[+] ip found : {ip}")
             self.table["ip"].append(ip)
@@ -124,63 +133,73 @@ class LogAnalyzer:
         self.analyzeReq()
 
         
+    def getReqAnalyze(self,status,request_line):
+        reason = {
+            "sus_dir": lambda sd: print(Fore.RED + f"[!] Suspicious Request for Directory : {sd}"),
+            "sus_file": lambda sf: print(Fore.RED + f"[!] Suspicious Request for File : {sf}"),
+            "coserror": lambda ep: print(Fore.YELLOW + f"[-] Server Error endpoint : {ep}"),
+            "cmd_found":  lambda cmd: print(Fore.RED + f"[!] Command Found : {cmd}")
+        }
+        b_status = {"404","500","504"}
+
+        defaultcheck = re.search(r'\b\s/\s\b',request_line)
+        if defaultcheck:
+            print(f"[+] Normal Request : {defaultcheck.group()}")
+            
+            
+        if (status.group().strip() in b_status) and (request_line.split()[1] not in common_endpoints):
+            reason.get("coserror",lambda ep: "[-] Not Found")(request_line.split()[1])
+
+        if f_match := next((n for n in badf_ext if n in request_line),None):
+            reason.get("sus_file",lambda sf: "[-] Not Found")(f_match)
+        else:
+            if dir_match := next((di for di in protectedDir if di in request_line),None):
+                reason.get("sus_dir", lambda sd: "[-] Not Found")(dir_match)
+
+            if ce_match := next((cmd for cmd in rce_cmds if cmd in request_line),None):
+                reason.get("cmd_found", lambda cmd: "[-] Not Found")(ce_match)
+
+            if e_match := next((e for e in common_endpoints if e in request_line),None):
+                if status.group().strip() in b_status:
+                    reason.get("coserror",lambda ep : "[-] Not Found")(e_match)
+                    
+            if f_match := next((g for g in goodf_ext if g in request_line),None):
+                
+                if fp_match := next((f for f in protectedFiles if f in request_line),None):
+                    reason.get("sus_file",lambda sf: "[-] Not Found")(fp_match)
+                else: 
+                    print(Fore.GREEN + f"[+] Normal request : {f_match}")
+
+
 
 
     def analyzeReq(self):
         methods = ['GET', 'POST', 'UPDATE', 'DELETE', 'PATCH']
-        get_contents = re.findall(r'"([^"]*)"', self.weblog)
+        get_contents = re.search(r'"([^"]*)"', self.weblog)
         if not get_contents:
             print("[-] No quoted request found")
             return
-        request_line = get_contents[0]
-        self.table["content"].append(request_line)
-        print(f"[+] Content : {get_contents}")
-        parts = request_line.split()
-        method = parts[0].upper() if parts else ""
-        logsplit = self.weblog.split()
-        status = logsplit[8] 
-        self.table["status"].append(status)
         
-        if method not in methods:
+        request_line = get_contents.group(0)
+        self.table["content"].append(request_line)
+        print(f"[+] Content : {get_contents.group(0)}")
+        
+        parts = request_line.split()
+        
+        method = parts[0].upper() if parts else ""
+        
+        
+        status = re.search(r'\s+[1-5]\d{2}\s',self.weblog)
+        self.table["status"].append(status.group())
+        print(f"[+] Status code: {status.group()}")
+
+        if method.replace('"','') not in methods:
             print(f"[-] Unknown method: {method}")
             return
-        match method:
+        match method.replace('"',''):
             case "GET":
-
-                if status in ["404","500","504"] and request_line.split()[1] not in common_endpoints:
-                    print(Fore.YELLOW + f"[-] Server Error endpoint : {request_line.split()[1]}")
-                f_match = [n for n in badf_ext if n in request_line]
-                if f_match:
-                    print(Fore.YELLOW + f"[i] Suspicious request for FILE : {f_match[0]}")
-                else:
-                    dir_match = [di for di in protectedDir if di in request_line]
-                    if dir_match:
-                        print(Fore.YELLOW + f"[i] Suspicious request for directory : {dir_match[0]}")
-
-                    ce_match = [cmd for cmd in rce_cmds if cmd in request_line]
-                    if ce_match:
-                        print(Fore.RED + f"[!] Command Found : {request_line.split()[1] if len(request_line.split()) > 1 else request_line}")
-
-                    e_match = [e for e in common_endpoints if e in request_line]
-                    if e_match:
-                        if status in ["404","500","504"]:
-                            print(Fore.YELLOW + f"[-] Server Error endpoint : {e_match[0]}")
-                    f_match = [g for g in goodf_ext if g in request_line]
-                    if f_match:
-
-                        fp_match = [f for f in protectedFiles if f in request_line]
-                        if fp_match:
-                            print(Fore.YELLOW + f"[i] Suspicious request for {fp_match[0]}")
-                        else: 
-                            print(Fore.GREEN + f"[+] Normal request : {f_match[0]}")
-
+                self.getReqAnalyze(status,request_line)
                     
-                    
-                reqS = [s for s in status_codes if s in self.weblog]
-                if reqS:
-                    self.table["status"].append(reqS[0])
-                else:
-                    self.table["status"].append("not found")
 
             case "POST":
                 ap_match = [a for a in api_endpoints if a in request_line]
@@ -191,11 +210,28 @@ class LogAnalyzer:
                     print(Fore.RED + f"[!] POST REQUEST ON PROTECTED FILE: {pf_match[0]}")
                 e_match = [e for e in common_endpoints if e in request_line]
                 if e_match:
-                    if status in ["404","500","504"]:
+                    if status.group().strip() in ["404","500","504"]:
                         print(Fore.YELLOW + f"[-] Server Error endpoint : {e_match[0]}")
 
             case _:
                 print(f"[-] Unhandled method: {method}")
+
+        url = re.search(r'https?://[a-z0-9]+\.[a-z]{2,}',self.weblog)
+        if url: 
+            print(f"[+] Referrer URL : {url.group()}")
+            self.table['referrer_url'].append(url.group())
+        else:
+            print(f"[i] Referrer URL : -")
+            self.table['referrer_url'].append('-')
+
+        useragent = re.search(r'Mozilla/(?P<mozilla_ver>\d+\.\d+)\s*\((?P<os_info>[^)]+)\)\s*(?P<engine_and_browser>.*)',self.weblog)
+        if useragent: 
+            ua = f"{useragent.group('mozilla_ver')} {useragent.group('os_info')} {useragent.group('engine_and_browser').replace('"','')}" 
+            print(f"[+] User Agent : {ua}")
+            self.table['useragent'].append(ua)
+        else: 
+            print(f"[+] User Agent : None")
+            self.table['useragent'].append("-")
 
     def ranking(self,rank):
         logRank = []
@@ -206,27 +242,38 @@ class LogAnalyzer:
         print("-------------------------------")
         print("[+] Table")
         for i in range(len(self.table["ip"])): 
-            print(f"[{i}] IP : {self.table['ip'][i]}, DATE : {self.table['date'][i]}, CONTENT : {self.table['content'][i]}, [{i}] STATUS CODE: {self.table['status'][i]}")
+            print(f"[{i}] IP : {self.table['ip'][i]}, DATE : {self.table['date'][i]}, CONTENT : {self.table['content'][i]}, [{i}] STATUS CODE: {self.table['status'][i]}, [{i}] USER AGENT: {self.table['useragent'][i]}, [{i}] REFERRER URL: {self.table['referrer_url'][i]}")
 
+
+
+class CLI:
+    @staticmethod
+    def parse_arguments():
+        parser = argparse.ArgumentParser(description="LOG ANALYZER TOOL")
+        parser.add_argument("-f","--file",type=str,required=False,help="File to scan (-u file or path to file)")
+        return parser.parse_args()
+
+    
 if __name__ == "__main__":
     try: 
         init(autoreset=True)
         print("[i] Checking Web Logs") 
-        for i,wlog in enumerate(norm) : 
-            print(f"[+] id {i} : \'{wlog}\'")
-            loganalyzer = LogAnalyzer(wlog,entry)
-            loganalyzer.analyzeLog()
-        for i,wlog in enumerate(mr): 
-            print(f"[+] id {i} : \'{wlog}\'")
-            loganalyzer = LogAnalyzer(wlog,entry)
-            loganalyzer.analyzeLog()
-        for i,wlog in enumerate(cserror) :
-            print(wlog)
-            print(f"[+] id {i} : \'{wlog}\'")
-            loganalyzer = LogAnalyzer(wlog,entry)
-            loganalyzer.analyzeLog()
-        #loganalyzer = LogAnalyzer(weblog,table)
-        #loganalyzer.analyzeLog()
+        cli = CLI()
+        args = cli.parse_arguments()
+        
+        with open(args.file,'r') as file:
+            for l in file:
+                loganalyzer = LogAnalyzer(l,entry)    
+                loganalyzer.analyzeLog()
+                                
+        # for l in norm :
+        #     loganalyzer = LogAnalyzer(l,entry) 
+        #     loganalyzer.analyzeLog()
         loganalyzer.returntable()
+    except argparse.ArgumentError as ae:
+        print(f"[!] {ae}")
+
+    
+    
     except Exception as e:
         print(f"[!] {e}")
